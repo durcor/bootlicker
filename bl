@@ -1,0 +1,75 @@
+#!/bin/sh
+# TODO
+# 	- Add Secure Boot support
+
+if [ -d "/boot" ]; then
+	efi_mount_dir="/boot"
+elif [ -d "/efi" ]; then
+	efi_mount_dir="/efi"
+else
+	sudo mkdir -p /boot
+	efi_mount_dir="/boot"
+fi
+
+efi_device_file="$(findmnt --output=SOURCE --noheadings $efi_mount_dir)"
+efi_disk="$(echo "$efi_device_file" | awk -Fp '{print $1}')"
+efi_part="$(echo "$efi_device_file" | awk -Fp '{print $2}')"
+
+command -v efibootmgr >/dev/null || {
+	if [ -e /lib/pacnostic.sh ]; then
+		. /lib/pacnostic.sh
+	else
+		echo "install pacnostic"
+	fi
+	$PACNOSTIC_INSTALL efibootmgr || echo "efibootmgr required, but could not be found by package manager"
+}
+
+ucode=$(ls $efi_mount_dir/*-ucode.img >/dev/null 2>&1)
+
+if [ "$ucode" ]; then
+	ucode="initrd=\\$ucode"
+fi
+
+case $1 in
+	"ls")
+		case $2 in
+			"all")
+				efibootmgr --verbose
+				;;
+			*)
+				efibootmgr
+				;;
+		esac
+		;;
+	"new"|"touch"|"open")
+		distro=$(awk -F'=' '/^NAME/ {print $2}' /etc/os-release | sed 's|"||g')
+		create_entry()
+		{
+			sudo efibootmgr \
+				--verbose \
+				--create \
+				--disk "$efi_disk" --part "$efi_part" \
+				--loader "/$kernel" \
+				--label "$distro - $kernel" \
+				--unicode "root=PARTUUID=$(
+							grep "$efi_device_file" -A1 |
+							awk -F'=' '/UUID/{print $2}' |
+							awk '{print $1}'
+							) rw initrd=\\initramfs-$kernel.img $ucode"
+		}
+		case $2 in
+			"all")
+				for kernel in $(ls /boot/vm* | awk -F'/' '{print $3}' | sed 's|vmlinuz-||'); do
+					create_entry
+				done
+				;;
+			*)
+				kernel=$(ls /boot/vm* | awk -F'/' '{print $3}' | sed 's|vmlinuz-||' | fzf)
+				create_entry
+				;;
+		esac
+		;;
+	*)
+		echo "Usage: $0 <ls> [all]"
+		;;
+esac
