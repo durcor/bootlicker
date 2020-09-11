@@ -1,4 +1,10 @@
 # bootlicker
+Easy and dynamic interface to EFI management using efibootmgr
+
+## Dependencies
+- Motherboard with UEFI support
+- POSIX-capable system (sh, awk, sed)
+- efibootmgr
 
 ## Usage
 ```sh
