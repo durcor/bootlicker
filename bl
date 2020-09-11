@@ -26,9 +26,7 @@ command -v efibootmgr >/dev/null || {
 
 ucode=$(ls $efi_mount_dir/*-ucode.img >/dev/null 2>&1)
 
-if [ "$ucode" ]; then
-	ucode="initrd=\\$ucode"
-fi
+[ "$ucode" ] && ucode="initrd=\\$ucode"
 
 case $1 in
 	"ls")
@@ -49,7 +47,7 @@ case $1 in
 				--verbose \
 				--create \
 				--disk "$efi_disk" --part "$efi_part" \
-				--loader "/$kernel" \
+				--loader "/vmlinuz-$kernel" \
 				--label "$distro - $kernel" \
 				--unicode "root=PARTUUID=$(
 							grep "$efi_device_file" -A1 |
@@ -70,6 +68,6 @@ case $1 in
 		esac
 		;;
 	*)
-		echo "Usage: $0 <ls> [all]"
+		echo "Usage: $0 <ls [all], new [all]>"
 		;;
 esac
