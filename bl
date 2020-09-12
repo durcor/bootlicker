@@ -2,12 +2,30 @@
 # TODO
 # 	- Add Secure Boot support
 
+if [ ! -d /sys/firmware/efi/ ]; then
+	echo "System does not have UEFI"
+	echo "Install an actual bootloader like GRUB"
+	exit 1
+fi
+
+if command -v sudo >/dev/null 2>&1; then
+	priv_escalator="sudo"
+elif command -v doas >/dev/null 2>&1; then
+	priv_escalator="doas"
+else
+	priv_escalator=""
+	[ "$USER" = "root" ] || {
+		echo "bootlicker needs to be run as root if sudo or doas are not available"
+		exit 1
+	}
+fi
+
 if [ -d "/boot" ]; then
 	efi_mount_dir="/boot"
 elif [ -d "/efi" ]; then
 	efi_mount_dir="/efi"
 else
-	sudo mkdir -p /boot
+	$priv_escalator mkdir -p /boot
 	efi_mount_dir="/boot"
 fi
 
@@ -29,13 +47,16 @@ ucode=$(ls $efi_mount_dir/*-ucode.img >/dev/null 2>&1)
 [ "$ucode" ] && ucode="initrd=\\$ucode"
 
 case $1 in
+	"info")
+		efibootmgr --verbose
+		;;
 	"ls")
 		case $2 in
 			"all")
-				efibootmgr --verbose
+				efibootmgr --verbose | grep -v 'BootCurrent\|Timeout\|BootOrder'
 				;;
 			*)
-				efibootmgr
+				efibootmgr | grep -v 'BootCurrent\|Timeout\|BootOrder'
 				;;
 		esac
 		;;
@@ -43,7 +64,7 @@ case $1 in
 		distro=$(awk -F'=' '/^NAME/ {print $2}' /etc/os-release | sed 's|"||g')
 		create_entry()
 		{
-			sudo efibootmgr \
+			$priv_escalator efibootmgr \
 				--verbose \
 				--create \
 				--disk "$efi_disk" --part "$efi_part" \
@@ -57,7 +78,7 @@ case $1 in
 		}
 		case $2 in
 			"all")
-				for kernel in $(ls /boot/vm* | awk -F'/' '{print $3}' | sed 's|vmlinuz-||'); do
+				for kernel in $(find /boot/vm* | awk -F'/' '{print $3}' | sed 's|vmlinuz-||'); do
 					create_entry
 				done
 				;;
@@ -66,6 +87,21 @@ case $1 in
 				create_entry
 				;;
 		esac
+		;;
+	"x"|"d"|"del"|"rm"|"remove"|"delete")
+		case $2 in
+			"")
+				efibootmgr | grep -v 'Timeout\|BootCurrent\|BootOrder' | fzf | awk '{print $1}' | awk -Ft '{print $2}' | sed 's|*||'
+				;;
+			*)
+				entry_to_delete=$(efibootmgr | grep "$2")
+				[ "$entry_to_delete" ] || { echo "Entry to delete not found" && exit 1 ;}
+				echo "Removing $entry_to_delete"
+				$priv_escalator efibootmgr -b "$2" --verbose
+				;;
+		esac
+		;;
+	"up")
 		;;
 	*)
 		echo "Usage: $0 <ls [all], new [all]>"
